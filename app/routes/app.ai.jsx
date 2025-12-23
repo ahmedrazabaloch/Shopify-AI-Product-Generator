@@ -29,27 +29,19 @@ export const action = async ({ request }) => {
     if (!raw) return { error: "Missing product data" };
 
     const product = JSON.parse(raw);
-
     const { admin } = await authenticate.admin(request);
 
     const result = await createProduct(admin, product);
 
-    const productCreate = result?.body?.data?.productCreate;
-
-    if (!productCreate || productCreate.userErrors?.length) {
-      return {
-        error:
-          productCreate?.userErrors?.[0]?.message || "Failed to create product",
-      };
+    const errors = result.data.productCreate.userErrors;
+    if (errors.length) {
+      return { error: errors[0].message };
     }
 
-    const productId = productCreate.product.id;
-
-    if (product.variants?.length) {
-      await createVariants(admin, productId, product.variants);
-    }
-
-    return { success: true };
+    return {
+      success: true,
+      productId: result.data.productCreate.product.id,
+    };
   }
 
   return null;
@@ -129,91 +121,55 @@ export default function AIProductGenerator() {
 }
 
 /* ================= PREVIEW ================= */
-// function AIPreview({ product }) {
-//   return (
-//     <s-card>
-//       <s-block-stack gap="base">
-//         <s-heading>{product.title}</s-heading>
-
-//         <div dangerouslySetInnerHTML={{ __html: product.description_html }} />
-
-//         <s-heading level="3">Variants</s-heading>
-//         <s-data-table
-//           columnContentTypes={["text", "numeric"]}
-//           headings={["Variant", "Price"]}
-//           rows={product.variants.map((v) => [v.name, `$${v.price}`])}
-//         />
-
-//         <s-heading level="3">Tags</s-heading>
-//         <s-inline-stack gap="base">
-//           {product.tags.map((tag) => (
-//             <s-badge key={tag}>{tag}</s-badge>
-//           ))}
-//         </s-inline-stack>
-
-//         <s-heading level="3">SEO</s-heading>
-//         <s-text>
-//           <strong>Title:</strong> {product.seo.title}
-//         </s-text>
-//         <s-text>
-//           <strong>Description:</strong> {product.seo.description}
-//         </s-text>
-//         <Form method="post">
-//           <input type="hidden" name="intent" value="publish" />
-//           <input type="hidden" name="product" value={JSON.stringify(product)} />
-
-//           <s-button type="submit" variant="primary">
-//             Save to Shopify
-//           </s-button>
-//         </Form>
-//       </s-block-stack>
-//     </s-card>
-//   );
-// }
 function AIPreview({ product }) {
   return (
     <s-card>
-      <s-block-stack gap="base">
-        <s-heading>{product.title}</s-heading>
+      <Form method="post" action="/app/ai">
+        <input type="hidden" name="intent" value="publish" />
+        <input type="hidden" name="product" value={JSON.stringify(product)} />
 
-        <s-text as="p" variant="bodyMd">
-          AI generated description
-        </s-text>
+        <s-block-stack gap="base">
+          <s-heading>{product.title}</s-heading>
 
-        <div dangerouslySetInnerHTML={{ __html: product.description_html }} />
+          <div
+            dangerouslySetInnerHTML={{
+              __html: product.description_html,
+            }}
+          />
 
-        <s-heading level="3">Variants</s-heading>
-        <s-data-table
-          columnContentTypes={["text", "numeric"]}
-          headings={["Variant", "Price"]}
-          rows={product.variants.map((v) => [v.name, `$${v.price}`])}
-        />
+          <s-heading level="3">Variants</s-heading>
+          <s-data-table
+            columnContentTypes={["text", "numeric"]}
+            headings={["Variant", "Price"]}
+            rows={product.variants.map((v) => [v.name, `$${v.price}`])}
+          />
 
-        <s-heading level="3">Tags</s-heading>
-        <s-inline-stack gap="tight">
-          {product.tags.map((tag) => (
-            <s-badge key={tag}>{tag}</s-badge>
-          ))}
-        </s-inline-stack>
+          <s-heading level="3">Tags</s-heading>
+          <s-inline-stack gap="tight">
+            {product.tags.map((tag) => (
+              <s-badge key={tag}>{tag}</s-badge>
+            ))}
+          </s-inline-stack>
 
-        <s-heading level="3">SEO</s-heading>
-        <s-text>
-          <strong>Title:</strong> {product.seo.title}
-        </s-text>
-        <s-text>
-          <strong>Description:</strong> {product.seo.description}
-        </s-text>
+          <s-heading level="3">SEO</s-heading>
+          <s-text>
+            <strong>Title:</strong> {product.seo.title}
+          </s-text>
+          <s-text>
+            <strong>Description:</strong> {product.seo.description}
+          </s-text>
 
-        <s-inline-stack gap="base">
-          <s-button variant="primary" disabled>
-            Save to Shopify
-          </s-button>
+          <s-inline-stack gap="base">
+            <s-button type="submit" variant="primary">
+              Save to Shopify
+            </s-button>
 
-          <s-button variant="secondary" disabled>
-            Regenerate
-          </s-button>
-        </s-inline-stack>
-      </s-block-stack>
+            <s-button variant="secondary" disabled>
+              Regenerate
+            </s-button>
+          </s-inline-stack>
+        </s-block-stack>
+      </Form>
     </s-card>
   );
 }

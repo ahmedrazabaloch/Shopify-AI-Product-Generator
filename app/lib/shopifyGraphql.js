@@ -1,7 +1,7 @@
 export async function createProduct(admin, product) {
-  return admin.graphql(
+  const response = await admin.graphql(
     `
-    mutation ProductCreate($input: ProductInput!) {
+    mutation productCreate($input: ProductInput!) {
       productCreate(input: $input) {
         product {
           id
@@ -26,10 +26,11 @@ export async function createProduct(admin, product) {
           },
         },
       },
-    }
+    },
   );
-}
 
+  return response.json();
+}
 
 export async function createVariants(admin, productId, variants) {
   return admin.graphql(
@@ -61,6 +62,6 @@ export async function createVariants(admin, productId, variants) {
           price: v.price.toString(),
         })),
       },
-    }
+    },
   );
 }
