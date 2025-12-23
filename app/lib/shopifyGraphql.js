@@ -3,14 +3,8 @@ export async function createProduct(admin, product) {
     `
     mutation productCreate($input: ProductInput!) {
       productCreate(input: $input) {
-        product {
-          id
-          title
-        }
-        userErrors {
-          field
-          message
-        }
+        product { id title }
+        userErrors { field message }
       }
     }
     `,
@@ -20,16 +14,41 @@ export async function createProduct(admin, product) {
           title: product.title,
           descriptionHtml: product.description_html,
           tags: product.tags,
-          seo: {
-            title: product.seo.title,
-            description: product.seo.description,
-          },
+          seo: product.seo,
         },
       },
     },
   );
 
-  return response.json();
+  const json = await response.json();
+
+  if (json.data.productCreate.userErrors.length) {
+    throw new Error(json.data.productCreate.userErrors[0].message);
+  }
+
+  return json.data.productCreate.product;
+}
+
+export async function uploadProductImages(admin, productId, images) {
+  return admin.graphql(
+    `
+    mutation productCreateMedia($productId: ID!, $media: [CreateMediaInput!]!) {
+      productCreateMedia(productId: $productId, media: $media) {
+        media { ... on MediaImage { id } }
+        userErrors { field message }
+      }
+    }
+    `,
+    {
+      variables: {
+        productId,
+        media: images.map((url) => ({
+          mediaContentType: "IMAGE",
+          originalSource: url, // ✅ MUST be public HTTPS URL
+        })),
+      },
+    },
+  );
 }
 
 export async function createVariants(admin, productId, variants) {
@@ -39,18 +58,9 @@ export async function createVariants(admin, productId, variants) {
       $productId: ID!
       $variants: [ProductVariantsBulkInput!]!
     ) {
-      productVariantsBulkCreate(
-        productId: $productId
-        variants: $variants
-      ) {
-        productVariants {
-          id
-          title
-        }
-        userErrors {
-          field
-          message
-        }
+      productVariantsBulkCreate(productId: $productId, variants: $variants) {
+        productVariants { id }
+        userErrors { field message }
       }
     }
     `,
@@ -58,8 +68,13 @@ export async function createVariants(admin, productId, variants) {
       variables: {
         productId,
         variants: variants.map((v) => ({
-          title: v.name,
           price: v.price.toString(),
+          optionValues: [
+            {
+              optionName: "Title",
+              name: v.name,
+            },
+          ],
         })),
       },
     },

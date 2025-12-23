@@ -1,5 +1,3 @@
-/* eslint-disable react/prop-types */
-
 import {
   Form,
   useActionData,
@@ -8,8 +6,11 @@ import {
 } from "react-router";
 import { authenticate } from "../shopify.server";
 import { generateProductWithAI } from "../bigmodel.server";
-// import { createProduct, createVariants } from "../lib/shopifyGraphql";
-import { createProduct } from "../lib/shopifyGraphql";
+import {
+  createProduct,
+  uploadProductImages,
+  createVariants,
+} from "../lib/shopifyGraphql";
 
 /* ================= LOADER ================= */
 export const loader = async ({ request }) => {
@@ -27,41 +28,28 @@ export const loader = async ({ request }) => {
 export const action = async ({ request }) => {
   const formData = await request.formData();
   const intent = formData.get("intent");
+  const { admin } = await authenticate.admin(request);
 
   if (intent === "generate") {
     const title = formData.get("title");
-    const tone = formData.get("tone");
-    const imageStyle = formData.get("imageStyle");
-    const pricing = formData.get("pricing");
-
-    const aiProduct = await generateProductWithAI({
-      title,
-      tone,
-      imageStyle,
-      pricing,
-    });
-
+    const aiProduct = await generateProductWithAI({ title });
     return { aiProduct };
   }
 
-  if (intent === "publish") {
-    const raw = formData.get("product");
-    if (!raw) return { error: "Missing product data" };
+  if (intent === "save") {
+    const product = JSON.parse(formData.get("product"));
 
-    const product = JSON.parse(raw);
-    const { admin } = await authenticate.admin(request);
+    const created = await createProduct(admin, product);
 
-    const result = await createProduct(admin, product);
-
-    const errors = result.data.productCreate.userErrors;
-    if (errors.length) {
-      return { error: errors[0].message };
+    if (product.images?.length) {
+      await uploadProductImages(admin, created.id, product.images);
     }
 
-    return {
-      success: true,
-      productId: result.data.productCreate.product.id,
-    };
+    if (product.variants?.length) {
+      await createVariants(admin, created.id, product.variants);
+    }
+
+    return { success: true };
   }
 
   return null;
@@ -73,131 +61,46 @@ export default function AIProductGenerator() {
   const navigation = useNavigation();
   const { settings } = useLoaderData();
 
-  const isLoading = navigation.state === "submitting";
-
   return (
     <s-page heading="AI Product Generator">
       <s-card>
         <Form method="post">
           <input type="hidden" name="intent" value="generate" />
-          <input type="hidden" name="tone" value={settings.tone} />
-          <input type="hidden" name="imageStyle" value={settings.imageStyle} />
-          <input type="hidden" name="pricing" value={settings.pricing} />
-          <s-block-stack gap="base">
-            <s-text-field
-              label="Product title"
-              name="title"
-              placeholder="e.g. AI SaaS Pricing Tool"
-              required
-            />
-
-            <s-button type="submit" variant="primary" loading={isLoading}>
-              Generate product with AI
-            </s-button>
-          </s-block-stack>
+          <s-text-field label="Product title" name="title" required />
+          <s-button type="submit" loading={navigation.state === "submitting"}>
+            Generate with AI
+          </s-button>
         </Form>
       </s-card>
 
-      {isLoading && (
-        <s-card>
-          <s-block-stack gap="base">
-            <s-skeleton-display-text size="large" />
-            <s-skeleton-body-text lines={4} />
-            <s-skeleton-body-text lines={2} />
-          </s-block-stack>
-        </s-card>
-      )}
-
-      {actionData?.error && (
-        <s-banner tone="critical" title="Something went wrong">
-          <p>{actionData.error}</p>
-        </s-banner>
-      )}
+      {actionData?.aiProduct && <AIPreview product={actionData.aiProduct} />}
 
       {actionData?.success && (
-        <s-banner tone="success">
-          Product created successfully in Shopify 🎉
-        </s-banner>
-      )}
-
-      {!isLoading && !actionData?.aiProduct && !actionData?.error && (
-        <s-card>
-          <s-empty-state
-            heading="Generate a product using AI"
-            action={{ content: "Enter a product title above" }}
-          >
-            <p>
-              Type a product name and let AI generate description, variants, and
-              tags for you.
-            </p>
-          </s-empty-state>
-        </s-card>
-      )}
-
-      {actionData?.aiProduct && (
-        <s-block-stack gap="base">
-          <AIPreview
-            product={actionData.aiProduct}
-            published={actionData?.success}
-          />
-        </s-block-stack>
+        <s-banner tone="success">Product created 🎉</s-banner>
       )}
     </s-page>
   );
 }
 
 /* ================= PREVIEW ================= */
-function AIPreview({ product, published = false }) {
+function AIPreview({ product }) {
   return (
     <s-card>
-      <s-block-stack gap="base">
-        <s-heading>{product.title}</s-heading>
+      <s-heading>{product.title}</s-heading>
 
-        <div dangerouslySetInnerHTML={{ __html: product.description_html }} />
+      <div dangerouslySetInnerHTML={{ __html: product.description_html }} />
 
-        <s-heading level="3">Variants</s-heading>
-        <s-data-table
-          columnContentTypes={["text", "numeric"]}
-          headings={["Variant", "Price"]}
-          rows={product.variants.map((v) => [v.name, `$${v.price}`])}
-        />
+      <s-inline-stack gap="base">
+        {product.images.map((img) => (
+          <img key={img} src={img} width="120" />
+        ))}
+      </s-inline-stack>
 
-        <s-heading level="3">Tags</s-heading>
-        <s-inline-stack gap="tight">
-          {product.tags.map((tag) => (
-            <s-badge key={tag}>{tag}</s-badge>
-          ))}
-        </s-inline-stack>
-
-        <s-heading level="3">SEO</s-heading>
-        <s-text>
-          <strong>Title:</strong> {product.seo.title}
-        </s-text>
-        <s-text>
-          <strong>Description:</strong> {product.seo.description}
-        </s-text>
-
-        {!published && (
-          <Form method="post">
-            <input type="hidden" name="intent" value="publish" />
-            <input
-              type="hidden"
-              name="product"
-              value={JSON.stringify(product)}
-            />
-
-            <s-button type="submit" variant="primary">
-              Save to Shopify
-            </s-button>
-          </Form>
-        )}
-
-        {published && (
-          <s-banner tone="success">
-            Product created successfully in Shopify 🎉
-          </s-banner>
-        )}
-      </s-block-stack>
+      <Form method="post">
+        <input type="hidden" name="intent" value="save" />
+        <input type="hidden" name="product" value={JSON.stringify(product)} />
+        <s-button type="submit">Save to Shopify</s-button>
+      </Form>
     </s-card>
   );
 }
