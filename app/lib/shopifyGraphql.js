@@ -1,7 +1,7 @@
 export async function createProduct(admin, product) {
   return admin.graphql(
     `
-    mutation ProductCreate($input: ProductCreateInput!) {
+    mutation ProductCreate($input: ProductInput!) {
       productCreate(input: $input) {
         product {
           id
@@ -19,7 +19,7 @@ export async function createProduct(admin, product) {
         input: {
           title: product.title,
           descriptionHtml: product.description_html,
-          tags: product.tags.join(", "),
+          tags: product.tags,
           seo: {
             title: product.seo.title,
             description: product.seo.description,
@@ -29,6 +29,7 @@ export async function createProduct(admin, product) {
     }
   );
 }
+
 
 export async function createVariants(admin, productId, variants) {
   return admin.graphql(

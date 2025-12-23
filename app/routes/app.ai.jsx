@@ -1,13 +1,9 @@
 /* eslint-disable react/prop-types */
 
-import {
-  Form,
-  useActionData,
-  useNavigation,
-  useSubmit,
-} from "react-router";
+import { Form, useActionData, useNavigation } from "react-router";
 import { authenticate } from "../shopify.server";
 import { generateProductWithAI } from "../bigmodel.server";
+import { createProduct, createVariants } from "../lib/shopifyGraphql";
 
 /* ================= LOADER ================= */
 export const loader = async ({ request }) => {
@@ -18,21 +14,49 @@ export const loader = async ({ request }) => {
 /* ================= ACTION ================= */
 export const action = async ({ request }) => {
   const formData = await request.formData();
-  const title = formData.get("title");
+  const intent = formData.get("intent");
 
-  console.log("ACTION HIT →", title);
+  if (intent === "generate") {
+    const title = formData.get("title");
+    if (!title) return { error: "Product title is required" };
 
-  if (!title) {
-    return { error: "Product title is required" };
+    const aiProduct = await generateProductWithAI({ title });
+    return { aiProduct };
   }
 
-  const aiProduct = await generateProductWithAI({ title });
-  return { aiProduct };
+  if (intent === "publish") {
+    const raw = formData.get("product");
+    if (!raw) return { error: "Missing product data" };
+
+    const product = JSON.parse(raw);
+
+    const { admin } = await authenticate.admin(request);
+
+    const result = await createProduct(admin, product);
+
+    const productCreate = result?.body?.data?.productCreate;
+
+    if (!productCreate || productCreate.userErrors?.length) {
+      return {
+        error:
+          productCreate?.userErrors?.[0]?.message || "Failed to create product",
+      };
+    }
+
+    const productId = productCreate.product.id;
+
+    if (product.variants?.length) {
+      await createVariants(admin, productId, product.variants);
+    }
+
+    return { success: true };
+  }
+
+  return null;
 };
 
 /* ================= PAGE ================= */
 export default function AIProductGenerator() {
-  const submit = useSubmit();
   const actionData = useActionData();
   const navigation = useNavigation();
 
@@ -41,7 +65,9 @@ export default function AIProductGenerator() {
   return (
     <s-page heading="AI Product Generator">
       <s-card>
-        <Form method="post" id="ai-form">
+        <Form method="post">
+          <input type="hidden" name="intent" value="generate" />
+
           <s-block-stack gap="base">
             <s-text-field
               label="Product title"
@@ -50,12 +76,7 @@ export default function AIProductGenerator() {
               required
             />
 
-            <s-button
-              variant="primary"
-              loading={isLoading}
-              disabled={isLoading}
-              onClick={() => submit(document.getElementById("ai-form"))}
-            >
+            <s-button type="submit" variant="primary" loading={isLoading}>
               Generate product with AI
             </s-button>
           </s-block-stack>
@@ -63,28 +84,135 @@ export default function AIProductGenerator() {
       </s-card>
 
       {isLoading && (
-        <s-banner tone="info">
-          Generating product with AI… please wait.
-        </s-banner>
+        <s-card>
+          <s-block-stack gap="base">
+            <s-skeleton-display-text size="large" />
+            <s-skeleton-body-text lines={4} />
+            <s-skeleton-body-text lines={2} />
+          </s-block-stack>
+        </s-card>
       )}
 
       {actionData?.error && (
-        <s-banner tone="critical">{actionData.error}</s-banner>
+        <s-banner tone="critical" title="Something went wrong">
+          <p>{actionData.error}</p>
+        </s-banner>
+      )}
+
+      {actionData?.success && (
+        <s-banner tone="success">
+          Product created successfully in Shopify 🎉
+        </s-banner>
+      )}
+
+      {!isLoading && !actionData?.aiProduct && !actionData?.error && (
+        <s-card>
+          <s-empty-state
+            heading="Generate a product using AI"
+            action={{ content: "Enter a product title above" }}
+          >
+            <p>
+              Type a product name and let AI generate description, variants, and
+              tags for you.
+            </p>
+          </s-empty-state>
+        </s-card>
       )}
 
       {actionData?.aiProduct && (
-        <AIPreview product={actionData.aiProduct} />
+        <s-block-stack gap="base">
+          <AIPreview product={actionData.aiProduct} />
+        </s-block-stack>
       )}
     </s-page>
   );
 }
 
 /* ================= PREVIEW ================= */
+// function AIPreview({ product }) {
+//   return (
+//     <s-card>
+//       <s-block-stack gap="base">
+//         <s-heading>{product.title}</s-heading>
+
+//         <div dangerouslySetInnerHTML={{ __html: product.description_html }} />
+
+//         <s-heading level="3">Variants</s-heading>
+//         <s-data-table
+//           columnContentTypes={["text", "numeric"]}
+//           headings={["Variant", "Price"]}
+//           rows={product.variants.map((v) => [v.name, `$${v.price}`])}
+//         />
+
+//         <s-heading level="3">Tags</s-heading>
+//         <s-inline-stack gap="base">
+//           {product.tags.map((tag) => (
+//             <s-badge key={tag}>{tag}</s-badge>
+//           ))}
+//         </s-inline-stack>
+
+//         <s-heading level="3">SEO</s-heading>
+//         <s-text>
+//           <strong>Title:</strong> {product.seo.title}
+//         </s-text>
+//         <s-text>
+//           <strong>Description:</strong> {product.seo.description}
+//         </s-text>
+//         <Form method="post">
+//           <input type="hidden" name="intent" value="publish" />
+//           <input type="hidden" name="product" value={JSON.stringify(product)} />
+
+//           <s-button type="submit" variant="primary">
+//             Save to Shopify
+//           </s-button>
+//         </Form>
+//       </s-block-stack>
+//     </s-card>
+//   );
+// }
 function AIPreview({ product }) {
   return (
     <s-card>
       <s-block-stack gap="base">
         <s-heading>{product.title}</s-heading>
+
+        <s-text as="p" variant="bodyMd">
+          AI generated description
+        </s-text>
+
+        <div dangerouslySetInnerHTML={{ __html: product.description_html }} />
+
+        <s-heading level="3">Variants</s-heading>
+        <s-data-table
+          columnContentTypes={["text", "numeric"]}
+          headings={["Variant", "Price"]}
+          rows={product.variants.map((v) => [v.name, `$${v.price}`])}
+        />
+
+        <s-heading level="3">Tags</s-heading>
+        <s-inline-stack gap="tight">
+          {product.tags.map((tag) => (
+            <s-badge key={tag}>{tag}</s-badge>
+          ))}
+        </s-inline-stack>
+
+        <s-heading level="3">SEO</s-heading>
+        <s-text>
+          <strong>Title:</strong> {product.seo.title}
+        </s-text>
+        <s-text>
+          <strong>Description:</strong> {product.seo.description}
+        </s-text>
+
+        <s-inline-stack gap="base">
+          <s-button variant="primary" disabled>
+            Save to Shopify
+          </s-button>
+
+          <s-button variant="secondary" disabled>
+            Regenerate
+          </s-button>
+        </s-inline-stack>
       </s-block-stack>
     </s-card>
   );
