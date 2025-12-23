@@ -1,17 +1,26 @@
-import { Form, useActionData, useNavigation } from "react-router";
+/* eslint-disable react/prop-types */
+
+import {
+  Form,
+  useActionData,
+  useNavigation,
+  useSubmit,
+} from "react-router";
 import { authenticate } from "../shopify.server";
 import { generateProductWithAI } from "../bigmodel.server";
 
-/* LOADER */
+/* ================= LOADER ================= */
 export const loader = async ({ request }) => {
   await authenticate.admin(request);
   return null;
 };
 
-/* ACTION */
+/* ================= ACTION ================= */
 export const action = async ({ request }) => {
   const formData = await request.formData();
   const title = formData.get("title");
+
+  console.log("ACTION HIT →", title);
 
   if (!title) {
     return { error: "Product title is required" };
@@ -21,19 +30,18 @@ export const action = async ({ request }) => {
   return { aiProduct };
 };
 
-/* PAGE */
+/* ================= PAGE ================= */
 export default function AIProductGenerator() {
+  const submit = useSubmit();
   const actionData = useActionData();
   const navigation = useNavigation();
 
-  const isLoading =
-    navigation.state === "submitting" ||
-    navigation.state === "loading";
+  const isLoading = navigation.state === "submitting";
 
   return (
     <s-page heading="AI Product Generator">
       <s-card>
-        <Form method="post" action="/app/ai">
+        <Form method="post" id="ai-form">
           <s-block-stack gap="base">
             <s-text-field
               label="Product title"
@@ -43,10 +51,10 @@ export default function AIProductGenerator() {
             />
 
             <s-button
-              submit
               variant="primary"
               loading={isLoading}
               disabled={isLoading}
+              onClick={() => submit(document.getElementById("ai-form"))}
             >
               Generate product with AI
             </s-button>
@@ -71,7 +79,7 @@ export default function AIProductGenerator() {
   );
 }
 
-/* PREVIEW */
+/* ================= PREVIEW ================= */
 function AIPreview({ product }) {
   return (
     <s-card>

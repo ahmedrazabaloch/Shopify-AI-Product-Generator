@@ -4,6 +4,20 @@ const BIGMODEL_API_URL =
   "https://open.bigmodel.cn/api/paas/v4/chat/completions";
 
 export async function generateProductWithAI({ title }) {
+  if (process.env.NODE_ENV !== "production") {
+    return {
+      title,
+      description_html: "<p>AI generated description</p>",
+      features: ["Fast", "Reliable", "AI Powered"],
+      tags: ["AI", "SaaS", "Automation"],
+      variants: [{ name: "Basic", price: 29 }],
+      seo: {
+        title,
+        description: "AI generated SEO description",
+      },
+    };
+  }
+
   const apiKey = process.env.BIGMODEL_API_KEY;
 
   if (!apiKey) {
