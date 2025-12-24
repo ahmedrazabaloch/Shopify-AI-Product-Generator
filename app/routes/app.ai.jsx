@@ -1,9 +1,4 @@
-import {
-  Form,
-  useActionData,
-  useNavigation,
-  useLoaderData,
-} from "react-router";
+import { Form, useActionData, useNavigation } from "react-router";
 import { authenticate } from "../shopify.server";
 import { generateProductWithAI } from "../bigmodel.server";
 import {
@@ -59,7 +54,6 @@ export const action = async ({ request }) => {
 export default function AIProductGenerator() {
   const actionData = useActionData();
   const navigation = useNavigation();
-  const { settings } = useLoaderData();
 
   return (
     <s-page heading="AI Product Generator">
@@ -87,7 +81,6 @@ function AIPreview({ product }) {
   return (
     <s-card>
       <s-heading>{product.title}</s-heading>
-
       <div dangerouslySetInnerHTML={{ __html: product.description_html }} />
 
       <s-inline-stack gap="base">

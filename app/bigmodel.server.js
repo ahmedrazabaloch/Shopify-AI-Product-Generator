@@ -1,56 +1,238 @@
+// export async function generateProductWithAI({
+//   title,
+//   tone = "seo",
+//   pricing = "medium",
+// }) {
+//   const apiKey = process.env.BIGMODEL_API_KEY;
+//   if (!apiKey) {
+//     throw new Error("BIGMODEL_API_KEY missing");
+//   }
+
+//   const prompt = `
+// You are an AI that generates Shopify product data.
+
+// Rules:
+// - Respond ONLY with valid JSON
+// - No markdown
+// - No explanation
+// - No backticks
+
+// Product title: "${title}"
+// Tone: ${tone}
+// Pricing strategy: ${pricing}
+
+// Generate:
+// - HTML product description
+// - 2-3 variants with prices
+// - 5 product tags
+// - SEO title and description
+
+// JSON format:
+// {
+//   "description_html": "<p>...</p>",
+//   "variants": [{ "name": "", "price": 0 }],
+//   "tags": [],
+//   "seo": { "title": "", "description": "" }
+// }
+// `;
+
+//   const response = await fetch(
+//     "https://open.bigmodel.cn/api/paas/v4/chat/completions",
+//     {
+//       method: "POST",
+//       headers: {
+//         Authorization: `Bearer ${apiKey}`,
+//         "Content-Type": "application/json",
+//       },
+//       body: JSON.stringify({
+//         model: "glm-4.5",
+//         messages: [{ role: "user", content: prompt }],
+//         temperature: 0.7,
+//       }),
+//     },
+//   );
+
+//   const data = await response.json();
+
+//   const content = data.choices?.[0]?.message?.content;
+//   if (!content) {
+//     throw new Error("BigModel returned empty response");
+//   }
+
+//   const ai = JSON.parse(content);
+
+//   return {
+//     title,
+//     description_html: ai.description_html,
+//     variants: ai.variants,
+//     tags: ai.tags,
+//     seo: ai.seo,
+//     images: [
+//       "https://picsum.photos/600/600?random=31",
+//       "https://picsum.photos/600/600?random=32",
+//     ],
+//   };
+// }
+
+import { uploadImage } from "./lib/cloudinary.server";
+
+const BIGMODEL_TEXT_URL =
+  "https://open.bigmodel.cn/api/paas/v4/chat/completions";
+
+const BIGMODEL_IMAGE_URL =
+  "https://open.bigmodel.cn/api/paas/v4/images/generations";
+
 export async function generateProductWithAI({
   title,
-  tone,
-  imageStyle,
-  pricing,
+  tone = "seo",
+  pricing = "medium",
 }) {
-  /* ======================
-     DEV MODE (STABLE)
-  ====================== */
-  if (process.env.NODE_ENV !== "production") {
-    return {
-      title,
-      description_html: `
-        <p><strong>${title}</strong> is a premium AI-generated product designed for modern businesses.</p>
-        <ul>
-          <li>Fast & reliable</li>
-          <li>SEO optimized</li>
-          <li>Easy to scale</li>
-        </ul>
-      `,
-      images: [
-        "https://picsum.photos/600/600?random=11",
-        "https://picsum.photos/600/600?random=12",
-        "https://picsum.photos/600/600?random=13",
-      ],
-      variants: [
-        { name: "Basic", price: 29 },
-        { name: "Pro", price: 59 },
-      ],
-      tags: ["AI", "Automation", "SaaS"],
-      seo: {
-        title: `${title} – AI Powered Product`,
-        description: `Buy ${title} with AI-generated features and optimized pricing.`,
-      },
-    };
+  const apiKey = process.env.BIGMODEL_API_KEY;
+  if (!apiKey) throw new Error("BIGMODEL_API_KEY missing");
+
+  /* =========================
+     1️⃣ TEXT GENERATION
+  ========================= */
+  const textPrompt = `
+Return ONLY valid JSON.
+NO markdown.
+NO backticks.
+NO explanation.
+
+Product title: "${title}"
+Tone: ${tone}
+Pricing: ${pricing}
+
+JSON format:
+{
+  "description_html": "<p>...</p>",
+  "variants": [{ "name": "", "price": 0 }],
+  "tags": [],
+  "seo": { "title": "", "description": "" },
+  "image_prompt": "short visual description"
+}
+`;
+
+  const textRes = await fetch(BIGMODEL_TEXT_URL, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${apiKey}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      model: "glm-4.5",
+      messages: [{ role: "user", content: textPrompt }],
+      temperature: 0.7,
+    }),
+  });
+
+  const textData = await textRes.json();
+
+  let raw = textData?.choices?.[0]?.message?.content;
+  if (!raw) throw new Error("BigModel returned empty text response");
+
+  // 🔥 CLEAN markdown fences
+  raw = raw
+    .replace(/```json/gi, "")
+    .replace(/```/g, "")
+    .trim();
+
+  let aiText;
+  try {
+    aiText = JSON.parse(raw);
+  } catch (err) {
+    console.error("❌ AI RAW OUTPUT:", raw);
+    throw new Error("AI did not return valid JSON");
   }
 
-  /* ======================
-     PRODUCTION (REAL AI)
-  ====================== */
+  /* =========================
+     2️⃣ IMAGE GENERATION
+  ========================= */
+  const imageRes = await fetch(BIGMODEL_IMAGE_URL, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${apiKey}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      model: "cogview-3-plus",
+      prompt: aiText.image_prompt,
+      size: "1024x1024",
+      n: 2,
+    }),
+  });
 
-  // 🔥 Example only – keep your provider here
-  // MUST return image URLs (DALL·E, Replicate, etc.)
+  const imageData = await imageRes.json();
+  console.log("🧠 BigModel image raw response:", imageData);
 
+  // if (!imageData?.data?.length) {
+  //   throw new Error("BigModel image generation failed");
+  // }
+
+  /* =========================
+     3️⃣ CLOUDINARY UPLOAD
+  ========================= */
+  /* =========================
+   2️⃣ IMAGE GENERATION (SAFE)
+========================= */
+
+  let uploadedImages = [];
+
+  try {
+    const imageRes = await fetch(BIGMODEL_IMAGE_URL, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${apiKey}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        model: "cogview-3-plus",
+        prompt: aiText.image_prompt,
+        size: "1024x1024",
+        n: 2,
+      }),
+    });
+
+    const imageData = await imageRes.json();
+
+    console.log("🧠 BigModel image response:", imageData);
+
+    if (Array.isArray(imageData?.data)) {
+      for (const img of imageData.data) {
+        if (img?.b64_json) {
+          try {
+            const url = await uploadImage(img.b64_json);
+            uploadedImages.push(url);
+          } catch (err) {
+            console.warn("⚠️ Cloudinary upload failed");
+          }
+        }
+      }
+    }
+  } catch (err) {
+    console.warn("⚠️ Image generation skipped:", err.message);
+  }
+
+  /* =========================
+   3️⃣ FALLBACK IMAGES
+========================= */
+
+  if (!uploadedImages.length) {
+    uploadedImages = [
+      "https://picsum.photos/600/600?random=101",
+      "https://picsum.photos/600/600?random=102",
+    ];
+  }
+
+  /* =========================
+     4️⃣ FINAL PRODUCT OBJECT
+  ========================= */
   return {
     title,
-    description_html: "<p>Real AI description</p>",
-    images: ["https://generated-image-url-1", "https://generated-image-url-2"],
-    variants: [{ name: "Standard", price: 49 }],
-    tags: ["AI"],
-    seo: {
-      title,
-      description: "SEO optimized AI product",
-    },
+    description_html: aiText.description_html,
+    variants: aiText.variants,
+    tags: aiText.tags,
+    seo: aiText.seo,
+    images: uploadedImages,
   };
 }
