@@ -20,47 +20,6 @@ export const loader = async ({ request }) => {
 };
 
 /* ================= ACTION (TEMP SAFE) ================= */
-// export const action = async ({ request }) => {
-//   try {
-//     const formData = await request.formData();
-//     const intent = formData.get("intent");
-
-//     if (intent === "generate") {
-//       const query = formData.get("query");
-
-//       if (!query || !query.trim()) {
-//         return { error: "Search query is required" };
-//       }
-
-//       let aiProduct;
-
-//       try {
-//         // ✅ REAL AI CALL (SAFE)
-//         aiProduct = await generateProductWithAI({
-//           title: query,
-//         });
-//       } catch (aiError) {
-//         console.error("❌ AI FAILED:", aiError);
-
-//         // 🔁 FALLBACK (NO CRASH)
-//         aiProduct = {
-//           title: query,
-//           descriptionHtml: `<p>AI failed. Temporary product for ${query}</p>`,
-//           images: [],
-//           tags: [],
-//           variants: [{ title: "Default", price: "0.00" }],
-//         };
-//       }
-
-//       return { aiProduct };
-//     }
-
-//     return null;
-//   } catch (err) {
-//     console.error("🔥 ACTION CRASHED:", err);
-//     return { error: "Internal server error" };
-//   }
-// };
 export const action = async ({ request }) => {
   try {
     const { admin } = await authenticate.admin(request);
@@ -90,6 +49,9 @@ export const action = async ({ request }) => {
       if (!product.title) {
         return { error: "Product title is required" };
       }
+      if (!product.descriptionHtml || product.descriptionHtml.trim() === "") {
+        throw new Error("Description missing before save");
+      }
 
       await createProduct(admin, product);
 
@@ -114,11 +76,6 @@ export default function AIProducts() {
 
   return (
     <Page title="AI Product Generator">
-      {actionData?.success && (
-        <Banner tone="success">Product created successfully 🎉</Banner>
-      )}
-      {actionData?.error && <Banner tone="critical">{actionData.error}</Banner>}
-
       <Card>
         <Form method="post">
           <input type="hidden" name="intent" value="generate" />
@@ -145,12 +102,10 @@ export default function AIProducts() {
           </InlineStack>
         </Form>
       </Card>
-
-      {/* {actionData?.aiProduct && (
-        <pre style={{ marginTop: 16 }}>
-          {JSON.stringify(actionData.aiProduct, null, 2)}
-        </pre>
-      )} */}
+      {actionData?.success && (
+        <Banner tone="success">Product created successfully 🎉</Banner>
+      )}
+      {actionData?.error && <Banner tone="critical">{actionData.error}</Banner>}
       {actionData?.aiProduct && showPreview && (
         <ProductPreviewModal
           product={actionData.aiProduct}

@@ -1,95 +1,3 @@
-// import {
-//   Modal,
-//   Text,
-//   Thumbnail,
-//   Tag,
-//   InlineStack,
-//   BlockStack,
-//   Card,
-//   Button,
-// } from "@shopify/polaris";
-// import { useState } from "react";
-
-// export function ProductPreviewModal({ product, onClose }) {
-//   const [open, setOpen] = useState(true);
-
-//   const handleClose = () => {
-//     setOpen(false);
-//     onClose?.();
-//   };
-
-//   return (
-//     <Modal
-//       open={open}
-//       onClose={handleClose}
-//       title="AI Product Preview"
-//       primaryAction={{
-//         content: "Save to Shopify",
-//         disabled: true, // will enable later
-//       }}
-//       secondaryActions={[
-//         {
-//           content: "Cancel",
-//           onAction: handleClose,
-//         },
-//       ]}
-//     >
-//       <Modal.Section>
-//         <BlockStack gap="400">
-//           {/* Title */}
-//           <Text variant="headingMd">{product.title}</Text>
-
-//           {/* Description */}
-//           <div
-//             dangerouslySetInnerHTML={{
-//               __html: product.descriptionHtml,
-//             }}
-//           />
-
-//           {/* Images */}
-//           {product.images?.length > 0 && (
-//             <InlineStack gap="200">
-//               {product.images.map((img, index) => (
-//                 <Thumbnail
-//                   key={index}
-//                   source={img}
-//                   alt={`Product image ${index + 1}`}
-//                 />
-//               ))}
-//             </InlineStack>
-//           )}
-
-//           {/* Tags */}
-//           {product.tags?.length > 0 && (
-//             <InlineStack gap="200">
-//               {product.tags.map((tag) => (
-//                 <Tag key={tag}>{tag}</Tag>
-//               ))}
-//             </InlineStack>
-//           )}
-
-//           {/* Variants */}
-//           <Card>
-//             <BlockStack gap="200">
-//               {product.variants.map((variant, index) => (
-//                 <Text key={index}>
-//                   {variant.title} — ${variant.price}
-//                 </Text>
-//               ))}
-//             </BlockStack>
-//           </Card>
-//         </BlockStack>
-//       </Modal.Section>
-//     </Modal>
-//   );
-// }
-
-
-/* =========================
-   New Code Added
-========================= */
-
-
 import {
   Modal,
   TextField,
@@ -100,16 +8,18 @@ import {
   Thumbnail,
   Button,
 } from "@shopify/polaris";
-import { Form } from "react-router";
+import { Form, useNavigation } from "react-router";
 import { useState } from "react";
 
 export function ProductPreviewModal({ product, onClose }) {
   const [open, setOpen] = useState(true);
-
-  // Editable state
   const [title, setTitle] = useState(product.title);
   const [price, setPrice] = useState(product.variants[0]?.price || "0.00");
   const [tags, setTags] = useState(product.tags.join(", "));
+  const navigation = useNavigation();
+  const saving =
+    navigation.state === "submitting" &&
+    navigation.formData?.get("intent") === "save";
 
   const handleClose = () => {
     setOpen(false);
@@ -123,26 +33,28 @@ export function ProductPreviewModal({ product, onClose }) {
       title="AI Product Preview"
       primaryAction={{
         content: "Save to Shopify",
+        loading: saving,
+        disabled: saving,
         onAction: () => {
           document.getElementById("save-product-form").requestSubmit();
         },
       }}
-      secondaryActions={[
-        { content: "Cancel", onAction: handleClose },
-      ]}
+      secondaryActions={[{ content: "Cancel", onAction: handleClose }]}
     >
       <Modal.Section>
         <Form method="post" id="save-product-form">
           <input type="hidden" name="intent" value="save" />
 
-          {/* 🔐 Final product payload */}
           <input
             type="hidden"
             name="product"
             value={JSON.stringify({
               ...product,
               title,
-              tags: tags.split(",").map((t) => t.trim()).filter(Boolean),
+              tags: tags
+                .split(",")
+                .map((t) => t.trim())
+                .filter(Boolean),
               variants: [
                 {
                   ...product.variants[0],
@@ -153,7 +65,6 @@ export function ProductPreviewModal({ product, onClose }) {
           />
 
           <BlockStack gap="400">
-            {/* Title */}
             <TextField
               label="Product title"
               value={title}
@@ -161,7 +72,6 @@ export function ProductPreviewModal({ product, onClose }) {
               autoComplete="off"
             />
 
-            {/* Price */}
             <TextField
               label="Price"
               type="number"
@@ -170,14 +80,11 @@ export function ProductPreviewModal({ product, onClose }) {
               prefix="$"
             />
 
-            {/* Tags */}
             <TextField
               label="Tags (comma separated)"
               value={tags}
               onChange={setTags}
             />
-
-            {/* Images */}
             {product.images?.length > 0 && (
               <InlineStack gap="200">
                 {product.images.map((img, i) => (
@@ -186,7 +93,7 @@ export function ProductPreviewModal({ product, onClose }) {
               </InlineStack>
             )}
 
-            {/* Preview Tags */}
+          
             <InlineStack gap="200">
               {tags
                 .split(",")
@@ -197,13 +104,14 @@ export function ProductPreviewModal({ product, onClose }) {
                 ))}
             </InlineStack>
 
-            {/* Description */}
             <Card>
-              <div
-                dangerouslySetInnerHTML={{
-                  __html: product.descriptionHtml,
-                }}
-              />
+              <div style={{ lineHeight: "1.6" }}>
+                <div
+                  dangerouslySetInnerHTML={{
+                    __html: product.descriptionHtml,
+                  }}
+                />
+              </div>
             </Card>
           </BlockStack>
         </Form>

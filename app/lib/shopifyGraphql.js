@@ -1,32 +1,36 @@
 export async function createProduct(admin, product) {
-  const response = await admin.graphql(
-    `
+  const mutation = `
     mutation productCreate($input: ProductInput!) {
       productCreate(input: $input) {
-        product { id title }
-        userErrors { field message }
+        product {
+          id
+        }
+        userErrors {
+          field
+          message
+        }
       }
     }
-    `,
-    {
-      variables: {
-        input: {
-          title: product.title,
-          descriptionHtml: product.description_html,
-          tags: product.tags,
-          seo: product.seo,
-        },
-      },
+  `;
+
+  const variables = {
+    input: {
+      title: product.title,
+      descriptionHtml: product.descriptionHtml,
+      tags: product.tags,
     },
-  );
+  };
 
-  const json = await response.json();
+  const response = await admin.graphql(mutation, { variables });
+  const data = await response.json();
 
-  if (json.data.productCreate.userErrors.length) {
-    throw new Error(json.data.productCreate.userErrors[0].message);
+  if (data.data.productCreate.userErrors.length) {
+    throw new Error(
+      data.data.productCreate.userErrors.map((e) => e.message).join(", "),
+    );
   }
 
-  return json.data.productCreate.product;
+  return data.data.productCreate.product;
 }
 
 export async function uploadProductImages(admin, productId, images) {
