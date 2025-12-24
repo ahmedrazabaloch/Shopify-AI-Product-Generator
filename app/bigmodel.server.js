@@ -44,7 +44,7 @@ JSON format:
       "Content-Type": "application/json",
     },
     body: JSON.stringify({
-      model: "glm-4-flash",
+      model: "glm-4.5",
       messages: [{ role: "user", content: textPrompt }],
       temperature: 0.7,
     }),
@@ -52,18 +52,11 @@ JSON format:
 
   const textData = await textRes.json();
 
-  // let raw = textData?.choices?.[0]?.message?.content;
-  // if (!raw) throw new Error("BigModel returned empty text response");
+  console.log(JSON.stringify( textData?.choices?.[0]?.message?.content,null,2));
+  
 
-  let raw =
-    textData?.choices?.[0]?.message?.content ||
-    textData?.data?.content ||
-    textData?.output?.text;
-
-  if (!raw) {
-    console.error("❌ BigModel full response:", textData);
-    throw new Error("BigModel returned empty or unsupported response");
-  }
+  let raw = textData?.choices?.[0]?.message?.content;
+  if (!raw) throw new Error("BigModel returned empty text response");
 
   // 🔥 CLEAN markdown fences
   raw = raw
@@ -81,30 +74,6 @@ JSON format:
 
   /* =========================
      2️⃣ IMAGE GENERATION
-  ========================= */
-  // const imageRes = await fetch(BIGMODEL_IMAGE_URL, {
-  //   method: "POST",
-  //   headers: {
-  //     Authorization: `Bearer ${apiKey}`,
-  //     "Content-Type": "application/json",
-  //   },
-  //   body: JSON.stringify({
-  //     model: "cogview-3-plus",
-  //     prompt: aiText.image_prompt,
-  //     size: "1024x1024",
-  //     n: 2,
-  //   }),
-  // });
-
-  // const imageData = await imageRes.json();
-  // console.log("🧠 BigModel image raw response:", imageData);
-
-  // if (!imageData?.data?.length) {
-  //   throw new Error("BigModel image generation failed");
-  // }
-
-  /* =========================
-     3️⃣ CLOUDINARY UPLOAD
   ========================= */
 
   let uploadedImages = [];
@@ -126,7 +95,7 @@ JSON format:
 
     const imageData = await imageRes.json();
 
-    console.log("🧠 BigModel image response:", imageData);
+    console.log("🧠 BigModel image response:-->", imageData);
 
     if (Array.isArray(imageData?.data)) {
       for (const img of imageData.data) {
