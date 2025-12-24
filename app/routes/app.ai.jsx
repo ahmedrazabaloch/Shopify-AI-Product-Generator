@@ -1,99 +1,162 @@
+import {
+  Page,
+  Card,
+  Button,
+  TextField,
+  Banner,
+  InlineStack,
+} from "@shopify/polaris";
+import { useState } from "react";
 import { Form, useActionData, useNavigation } from "react-router";
 import { authenticate } from "../shopify.server";
 import { generateProductWithAI } from "../bigmodel.server";
-import {
-  createProduct,
-  uploadProductImages,
-  createVariants,
-} from "../lib/shopifyGraphql";
+import { ProductPreviewModal } from "../components/ProductPreviewModal";
+import { createProduct } from "../lib/shopifyGraphql";
 
 /* ================= LOADER ================= */
 export const loader = async ({ request }) => {
   await authenticate.admin(request);
-  return {
-    settings: {
-      tone: "seo",
-      imageStyle: "studio",
-      pricing: "medium",
-    },
-  };
-};
-
-/* ================= ACTION ================= */
-export const action = async ({ request }) => {
-  const formData = await request.formData();
-  const intent = formData.get("intent");
-  const { admin } = await authenticate.admin(request);
-
-  if (intent === "generate") {
-    const title = formData.get("title");
-    const aiProduct = await generateProductWithAI({ title });
-    return { aiProduct };
-  }
-
-  if (intent === "save") {
-    const product = JSON.parse(formData.get("product"));
-
-    const created = await createProduct(admin, product);
-
-    if (product.images?.length) {
-      await uploadProductImages(admin, created.id, product.images);
-    }
-
-    if (product.variants?.length) {
-      await createVariants(admin, created.id, product.variants);
-    }
-
-    return { success: true };
-  }
-
   return null;
 };
 
+/* ================= ACTION (TEMP SAFE) ================= */
+// export const action = async ({ request }) => {
+//   try {
+//     const formData = await request.formData();
+//     const intent = formData.get("intent");
+
+//     if (intent === "generate") {
+//       const query = formData.get("query");
+
+//       if (!query || !query.trim()) {
+//         return { error: "Search query is required" };
+//       }
+
+//       let aiProduct;
+
+//       try {
+//         // ✅ REAL AI CALL (SAFE)
+//         aiProduct = await generateProductWithAI({
+//           title: query,
+//         });
+//       } catch (aiError) {
+//         console.error("❌ AI FAILED:", aiError);
+
+//         // 🔁 FALLBACK (NO CRASH)
+//         aiProduct = {
+//           title: query,
+//           descriptionHtml: `<p>AI failed. Temporary product for ${query}</p>`,
+//           images: [],
+//           tags: [],
+//           variants: [{ title: "Default", price: "0.00" }],
+//         };
+//       }
+
+//       return { aiProduct };
+//     }
+
+//     return null;
+//   } catch (err) {
+//     console.error("🔥 ACTION CRASHED:", err);
+//     return { error: "Internal server error" };
+//   }
+// };
+export const action = async ({ request }) => {
+  try {
+    const { admin } = await authenticate.admin(request);
+    const formData = await request.formData();
+    const intent = formData.get("intent");
+
+    /* ================= GENERATE ================= */
+    if (intent === "generate") {
+      const query = formData.get("query");
+
+      if (!query?.trim()) {
+        return { error: "Search query is required" };
+      }
+
+      const aiProduct = await generateProductWithAI({
+        title: query,
+      });
+
+      return { aiProduct };
+    }
+
+    /* ================= SAVE ================= */
+    if (intent === "save") {
+      const product = JSON.parse(formData.get("product"));
+
+      // 🔐 Validation
+      if (!product.title) {
+        return { error: "Product title is required" };
+      }
+
+      await createProduct(admin, product);
+
+      return { success: true };
+    }
+
+    return null;
+  } catch (err) {
+    console.error("ACTION ERROR:", err);
+    return { error: "Something went wrong" };
+  }
+};
+
 /* ================= PAGE ================= */
-export default function AIProductGenerator() {
+export default function AIProducts() {
   const actionData = useActionData();
   const navigation = useNavigation();
+  const loading = navigation.state === "submitting";
+  const [showPreview, setShowPreview] = useState(false);
+
+  const [query, setQuery] = useState("");
 
   return (
-    <s-page heading="AI Product Generator">
-      <s-card>
+    <Page title="AI Product Generator">
+      {actionData?.success && (
+        <Banner tone="success">Product created successfully 🎉</Banner>
+      )}
+      {actionData?.error && <Banner tone="critical">{actionData.error}</Banner>}
+
+      <Card>
         <Form method="post">
           <input type="hidden" name="intent" value="generate" />
-          <s-text-field label="Product title" name="title" required />
-          <s-button type="submit" loading={navigation.state === "submitting"}>
-            Generate with AI
-          </s-button>
+
+          <TextField
+            label="Search product idea"
+            placeholder="e.g. Wireless Headphones"
+            value={query}
+            onChange={setQuery}
+            autoComplete="off"
+          />
+
+          <input type="hidden" name="query" value={query} />
+
+          <InlineStack align="end" gap="300">
+            <Button
+              submit
+              loading={loading}
+              disabled={!query.trim()}
+              onClick={() => setShowPreview(true)}
+            >
+              Generate with AI
+            </Button>
+          </InlineStack>
         </Form>
-      </s-card>
+      </Card>
 
-      {actionData?.aiProduct && <AIPreview product={actionData.aiProduct} />}
-
-      {actionData?.success && (
-        <s-banner tone="success">Product created 🎉</s-banner>
+      {/* {actionData?.aiProduct && (
+        <pre style={{ marginTop: 16 }}>
+          {JSON.stringify(actionData.aiProduct, null, 2)}
+        </pre>
+      )} */}
+      {actionData?.aiProduct && showPreview && (
+        <ProductPreviewModal
+          product={actionData.aiProduct}
+          onClose={() => setShowPreview(false)}
+        />
       )}
-    </s-page>
-  );
-}
-
-/* ================= PREVIEW ================= */
-function AIPreview({ product }) {
-  return (
-    <s-card>
-      <s-heading>{product.title}</s-heading>
-      <div dangerouslySetInnerHTML={{ __html: product.description_html }} />
-
-      <s-inline-stack gap="base">
-        {product.images.map((img) => (
-          <img key={img} src={img} width="120" />
-        ))}
-      </s-inline-stack>
-
-      <Form method="post">
-        <input type="hidden" name="intent" value="save" />
-        <input type="hidden" name="product" value={JSON.stringify(product)} />
-        <s-button type="submit">Save to Shopify</s-button>
-      </Form>
-    </s-card>
+    </Page>
   );
 }
