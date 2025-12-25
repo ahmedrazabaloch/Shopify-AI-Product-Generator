@@ -5,24 +5,35 @@ import {
   TextField,
   Banner,
   InlineStack,
+  BlockStack,
 } from "@shopify/polaris";
-import { useState } from "react";
-import { Form, useActionData, useNavigation } from "react-router";
+import { useState, useEffect } from "react";
+import { Form, useActionData, useNavigation, useLoaderData } from "react-router";
 import { authenticate } from "../shopify.server";
 import { generateProductWithAI } from "../bigmodel.server";
 import { ProductPreviewModal } from "../components/ProductPreviewModal";
 import { createProduct } from "../lib/shopifyGraphql";
+import { getAISettings, saveProductGeneration } from "../db.server";
 
 /* ================= LOADER ================= */
 export const loader = async ({ request }) => {
-  await authenticate.admin(request);
-  return null;
+  const { session } = await authenticate.admin(request);
+  const settings = await getAISettings(session.shop);
+
+  return {
+    settings: settings || {
+      tone: "seo",
+      imageStyle: "studio",
+      imageCount: 3,
+      pricingStrategy: "medium",
+    },
+  };
 };
 
-/* ================= ACTION (TEMP SAFE) ================= */
+/* ================= ACTION ================= */
 export const action = async ({ request }) => {
   try {
-    const { admin } = await authenticate.admin(request);
+    const { admin, session } = await authenticate.admin(request);
     const formData = await request.formData();
     const intent = formData.get("intent");
 
@@ -31,12 +42,21 @@ export const action = async ({ request }) => {
       const query = formData.get("query");
 
       if (!query?.trim()) {
-        return { error: "Search query is required" };
+        return { error: "Product title is required" };
       }
+
+      const settings = await getAISettings(session.shop);
 
       const aiProduct = await generateProductWithAI({
         title: query,
+        tone: settings?.tone || "seo",
+        pricing: settings?.pricingStrategy || "medium",
+        imageStyle: settings?.imageStyle || "studio",
+        imageCount: settings?.imageCount || 3,
       });
+
+      // Save to history
+      await saveProductGeneration(session.shop, query);
 
       return { aiProduct };
     }
@@ -45,15 +65,18 @@ export const action = async ({ request }) => {
     if (intent === "save") {
       const product = JSON.parse(formData.get("product"));
 
-      // 🔐 Validation
+      // Validation
       if (!product.title) {
         return { error: "Product title is required" };
       }
       if (!product.descriptionHtml || product.descriptionHtml.trim() === "") {
-        throw new Error("Description missing before save");
+        return { error: "Description is required" };
       }
 
-      await createProduct(admin, product);
+      const createdProduct = await createProduct(admin, product);
+
+      // Update generation status
+      await saveProductGeneration(session.shop, product.title, createdProduct.id);
 
       return { success: true };
     }
@@ -61,12 +84,13 @@ export const action = async ({ request }) => {
     return null;
   } catch (err) {
     console.error("ACTION ERROR:", err);
-    return { error: "Something went wrong" };
+    return { error: err.message || "Something went wrong" };
   }
 };
 
 /* ================= PAGE ================= */
 export default function AIProducts() {
+  const { settings } = useLoaderData();
   const actionData = useActionData();
   const navigation = useNavigation();
   const loading = navigation.state === "submitting";
@@ -74,38 +98,75 @@ export default function AIProducts() {
 
   const [query, setQuery] = useState("");
 
+  useEffect(() => {
+    if (actionData?.aiProduct) {
+      setShowPreview(true);
+    }
+    if (actionData?.success) {
+      setShowPreview(false);
+      setQuery("");
+    }
+  }, [actionData]);
+
   return (
-    <Page title="AI Product Generator">
-      <Card>
-        <Form method="post">
-          <input type="hidden" name="intent" value="generate" />
+    <Page
+      title="AI Product Generator"
+      subtitle="Enter a product title and let AI generate everything else"
+    >
+      <BlockStack gap="500">
+        {actionData?.success && (
+          <Banner tone="success" onDismiss={() => {}}>
+            Product created successfully! 🎉
+          </Banner>
+        )}
 
-          <TextField
-            label="Search product idea"
-            placeholder="e.g. Wireless Headphones"
-            value={query}
-            onChange={setQuery}
-            autoComplete="off"
-          />
+        {actionData?.error && (
+          <Banner tone="critical" onDismiss={() => {}}>
+            {actionData.error}
+          </Banner>
+        )}
 
-          <input type="hidden" name="query" value={query} />
+        <Card>
+          <Form method="post">
+            <input type="hidden" name="intent" value="generate" />
 
-          <InlineStack align="end" gap="300">
-            <Button
-              submit
-              loading={loading}
-              disabled={!query.trim()}
-              onClick={() => setShowPreview(true)}
-            >
-              Generate with AI
-            </Button>
-          </InlineStack>
-        </Form>
-      </Card>
-      {actionData?.success && (
-        <Banner tone="success">Product created successfully 🎉</Banner>
-      )}
-      {actionData?.error && <Banner tone="critical">{actionData.error}</Banner>}
+            <BlockStack gap="400">
+              <TextField
+                label="Product Title"
+                placeholder="e.g. Wireless Headphones, Smart Watch, Yoga Mat"
+                value={query}
+                onChange={setQuery}
+                autoComplete="off"
+                helpText="AI will generate description, images, variants, and pricing"
+              />
+
+              <input type="hidden" name="query" value={query} />
+
+              <InlineStack align="end" gap="300">
+                <Button
+                  submit
+                  variant="primary"
+                  loading={loading}
+                  disabled={!query.trim() || loading}
+                >
+                  Generate with AI
+                </Button>
+              </InlineStack>
+            </BlockStack>
+          </Form>
+        </Card>
+
+        <Card>
+          <BlockStack gap="200">
+            <strong>Current AI Settings:</strong>
+            <p>• Tone: {settings.tone.toUpperCase()}</p>
+            <p>• Image Style: {settings.imageStyle.toUpperCase()}</p>
+            <p>• Images: {settings.imageCount}</p>
+            <p>• Pricing: {settings.pricingStrategy.toUpperCase()}</p>
+          </BlockStack>
+        </Card>
+      </BlockStack>
+
       {actionData?.aiProduct && showPreview && (
         <ProductPreviewModal
           product={actionData.aiProduct}
@@ -115,3 +176,4 @@ export default function AIProducts() {
     </Page>
   );
 }
+

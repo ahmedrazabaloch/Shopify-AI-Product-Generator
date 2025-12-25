@@ -32,3 +32,23 @@ model Session {
   refreshToken        String?
   refreshTokenExpires DateTime?
 }
+
+model AISettings {
+  id              String   @id @default(uuid())
+  shop            String   @unique
+  tone            String   @default("seo")
+  imageStyle      String   @default("studio")
+  imageCount      Int      @default(3)
+  pricingStrategy String   @default("medium")
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+}
+
+model ProductGeneration {
+  id          String   @id @default(uuid())
+  shop        String
+  title       String
+  productId   String?
+  status      String   @default("generated")
+  createdAt   DateTime @default(now())
+}
