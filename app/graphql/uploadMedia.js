@@ -23,13 +23,15 @@ export const UPLOAD_MEDIA_MUTATION = `
 `;
 
 export async function uploadProductImages(admin, productId, images) {
-  if (!images || images.length === 0) {
+  const validImages = (images || []).filter((url) => typeof url === "string" && url.startsWith("http"));
+
+  if (validImages.length === 0) {
     return [];
   }
 
   const variables = {
     productId,
-    media: images.map((url, index) => ({
+    media: validImages.map((url, index) => ({
       mediaContentType: "IMAGE",
       originalSource: url,
       alt: `Product image ${index + 1}`,

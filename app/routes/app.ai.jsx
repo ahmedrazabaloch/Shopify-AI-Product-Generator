@@ -13,6 +13,7 @@ import { authenticate } from "../shopify.server";
 import { generateProductWithAI } from "../bigmodel.server";
 import { ProductPreviewModal } from "../components/ProductPreviewModal";
 import { createProduct } from "../lib/shopifyGraphql";
+import { uploadProductImages } from "../graphql/uploadMedia";
 import { getAISettings, saveProductGeneration } from "../db.server";
 
 /* ================= LOADER ================= */
@@ -73,9 +74,21 @@ export const action = async ({ request }) => {
         return { error: "Description is required" };
       }
 
+      // Step 1: Create the product with variants and pricing
       const createdProduct = await createProduct(admin, product);
 
-      // Update generation status
+      // Step 2: Upload images if available
+      if (product.images && product.images.length > 0) {
+        try {
+          await uploadProductImages(admin, createdProduct.id, product.images);
+          console.log(`✅ Uploaded ${product.images.length} images to product ${createdProduct.id}`);
+        } catch (imgError) {
+          console.error("⚠️ Image upload failed:", imgError);
+          // Continue even if images fail
+        }
+      }
+
+      // Step 3: Update generation status
       await saveProductGeneration(session.shop, product.title, createdProduct.id);
 
       return { success: true };

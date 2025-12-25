@@ -5,6 +5,13 @@ export const CREATE_PRODUCT_MUTATION = `
         id
         title
         handle
+        variants(first: 1) {
+          edges {
+            node {
+              id
+            }
+          }
+        }
       }
       userErrors {
         field
@@ -15,6 +22,7 @@ export const CREATE_PRODUCT_MUTATION = `
 `;
 
 export async function createProduct(admin, product) {
+  // Create the product first (Shopify creates a default variant automatically)
   const variables = {
     input: {
       title: product.title,
@@ -22,7 +30,7 @@ export async function createProduct(admin, product) {
       tags: product.tags,
       vendor: product.vendor || "AI Generated",
       productType: product.productType || "AI Product",
-      status: "DRAFT",
+      status: "ACTIVE",
     },
   };
 
@@ -35,14 +43,20 @@ export async function createProduct(admin, product) {
     );
   }
 
-  return data.data.productCreate.product;
+  const createdProduct = data.data.productCreate.product;
+
+  const hasCustomVariants = product.variants?.length > 0;
+
+  // If we have our own variants, add them (default variant remains)
+  if (hasCustomVariants) {
+    await createAdditionalVariants(admin, createdProduct.id, product.variants);
+  }
+
+  return createdProduct;
 }
 
 export const CREATE_VARIANTS_MUTATION = `
-  mutation ProductVariantsBulkCreate(
-    $productId: ID!
-    $variants: [ProductVariantsBulkInput!]!
-  ) {
+  mutation productVariantsBulkCreate($productId: ID!, $variants: [ProductVariantsBulkInput!]!) {
     productVariantsBulkCreate(productId: $productId, variants: $variants) {
       productVariants {
         id
@@ -57,7 +71,7 @@ export const CREATE_VARIANTS_MUTATION = `
   }
 `;
 
-export async function createVariants(admin, productId, variants) {
+export async function createAdditionalVariants(admin, productId, variants) {
   if (!variants || variants.length === 0) {
     return null;
   }
@@ -65,11 +79,11 @@ export async function createVariants(admin, productId, variants) {
   const variables = {
     productId,
     variants: variants.map((v) => ({
-      price: v.price.toString(),
+      price: v.price?.toString() || "0.00",
       compareAtPrice: v.compareAtPrice ? v.compareAtPrice.toString() : null,
       optionValues: [
         {
-          optionName: "Size",
+          optionName: "Title",
           name: v.option1 || "Default",
         },
       ],
@@ -79,11 +93,15 @@ export async function createVariants(admin, productId, variants) {
   const response = await admin.graphql(CREATE_VARIANTS_MUTATION, { variables });
   const data = await response.json();
 
-  if (data.data.productVariantsBulkCreate.userErrors.length) {
-    throw new Error(
-      data.data.productVariantsBulkCreate.userErrors.map((e) => e.message).join(", ")
-    );
+  const userErrors = data?.data?.productVariantsBulkCreate?.userErrors || [];
+  if (userErrors.length) {
+    const message = userErrors.map((e) => e.message).join(", ");
+    throw new Error(`Variant creation failed: ${message}`);
   }
 
-  return data.data.productVariantsBulkCreate.productVariants;
+  return data?.data?.productVariantsBulkCreate?.productVariants || [];
+}
+
+export async function createVariants(admin, productId, variants) {
+  return createAdditionalVariants(admin, productId, variants);
 }

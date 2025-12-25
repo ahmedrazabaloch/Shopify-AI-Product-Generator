@@ -23,10 +23,11 @@ export async function uploadImage(image) {
   const result = await cloudinary.uploader.upload(source, {
     folder: "ai-products",
     resource_type: "image",
-    format: "png",               // 🔥 FORCE image format
+    // Keep images web-friendly for Shopify ingestion
     transformation: [
-      { quality: "auto" },
-      { fetch_format: "png" },
+      { width: 1024, crop: "limit" },
+      { fetch_format: "jpg" },
+      { quality: "auto:good" },
     ],
   });
 
