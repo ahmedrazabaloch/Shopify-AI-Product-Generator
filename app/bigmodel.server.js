@@ -1,4 +1,4 @@
-import { uploadImage } from "./lib/cloudinary.server";
+// Removed Cloudinary import - images now uploaded directly to Shopify
 
 /* =========================
    CONSTANTS
@@ -167,20 +167,28 @@ Image Style: ${imageStyle}
     ai.imagePrompt || `${stylePrompt}, ${title}, high quality, ecommerce photo`;
 
   try {
-    images = await Promise.all(
-      Array.from({ length: Math.min(imageCount, 5) }).map(async () => {
+    // Attempt to generate images
+    const generatedImages = await Promise.all(
+      Array.from({ length: Math.min(imageCount, 3) }).map(async () => {
         const base64 = await generateImageWithHF(imagePrompt);
-        return uploadImage(base64);
+        return base64;
       }),
     );
+    
+    // Only use if we got valid data
+    if (generatedImages.length > 0 && generatedImages.every(img => img && img.length > 100)) {
+      images = generatedImages;
+      console.log(`✅ Generated ${images.length} AI images`);
+    } else {
+      throw new Error("Generated images invalid");
+    }
   } catch (err) {
-    console.warn("⚠️ Image generation failed:", err.message);
-  }
-
-  if (!images.length) {
+    console.warn(`⚠️ Image generation failed: ${err.message}. Using placeholder images.`);
+    // Use reliable placeholder URLs that Shopify can fetch directly
     images = Array.from({ length: imageCount }).map(
       (_, i) => `https://picsum.photos/600/600?random=${Date.now() + i}`,
     );
+    console.log(`📸 Using ${images.length} placeholder images as fallback`);
   }
 
   /* =========================

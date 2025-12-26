@@ -80,12 +80,18 @@ export const action = async ({ request }) => {
       // Step 2: Upload images if available
       if (product.images && product.images.length > 0) {
         try {
+          console.log(`📸 Starting image upload: ${product.images.length} images`);
+          console.log(`📸 Image types:`, product.images.map((img) => 
+            typeof img === "string" ? (img.startsWith("http") ? "URL" : "BASE64") : "unknown"
+          ));
           await uploadProductImages(admin, createdProduct.id, product.images);
           console.log(`✅ Uploaded ${product.images.length} images to product ${createdProduct.id}`);
         } catch (imgError) {
-          console.error("⚠️ Image upload failed:", imgError);
-          // Continue even if images fail
+          console.error("⚠️ Image upload failed:", imgError.message);
+          // Continue even if images fail - product is created with text/descriptions
         }
+      } else {
+        console.log("⚠️ No images provided for product");
       }
 
       // Step 3: Update generation status
